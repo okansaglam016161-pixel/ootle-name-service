@@ -1,0 +1,23 @@
+[package]
+name = "ootle_name_service"
+version = "0.1.0"
+authors = ["Okan Saglam <okansaglam016161@gmail.com>"]
+edition = "2024"
+
+[package.metadata.tari-template]
+
+
+[dependencies]
+tari_template_lib = { version = "0.29" }
+
+[dev-dependencies]
+tari_template_test_tooling = "0.36"
+
+
+
+
+[lib]
+crate-type = ["cdylib"]
+
+[build-dependencies]
+tari_ootle_template_build = "0.7"
