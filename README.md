@@ -83,6 +83,26 @@ cargo test              # local logic tests via tari_template_test_tooling
 No credentials live in this repo — `tari-cli` authenticates to the wallet daemon via an API key
 passed at publish time (`--api-key` / `TARI_WALLET_DAEMON_API_KEY`), never written to disk here.
 
-## Status
+## Deployment (esmeralda testnet)
 
-Local logic proven (ONS-1). On-chain deployment to esmeralda is ONS-2.
+Local logic proven (ONS-1), then published and exercised end-to-end on-chain (ONS-2).
+
+| what | address |
+|------|---------|
+| **Template** (`OotleNameService`, ABI v0) | `template_4af4c620d1585eaf50b6c82b2f14f2ccc6a70a908b227ca46f1a1121070a69d1` |
+| **Registry component** (shared, `new()`) | `component_0e70f16ad20e1c1b92f035d1e6f4b69c6c4c774ed309c2eb9e2c42c01279994a` |
+
+First registered name: **`okz`** → owner `c00a40049fa8382a411e40a0d95f2a1231b1fb18d4ccb13c1eb284024c03242d`
+(Okz61's Ootle signer), record `nostr = npub1f80mhkkj8hw2ay8xpqwn3c742ptuldvpxlk68k92el5hs22xllpqsknttt`.
+
+Transactions were built with the tari.js `TransactionBuilder` and **sealed server-side by the wallet
+daemon** (`seal_signer = the account's owner key`), so the on-chain owner is the real account identity,
+not an ephemeral client key. Each mutating call was dry-run first (free) to validate and estimate the fee.
+
+| step | tx id | fee (µtTARI) |
+|------|-------|--------------|
+| `new()` instantiate | `99fc365cf07c3e782e94e34ebe25ab7f898796d868871e58335d6b116b1b7298` | 601 |
+| `register("okz")` | `01d23f899210c093ba19f217e98689366d2f58d49c645246f83191de96a13f98` | 658 |
+| `set_record("okz","nostr",…)` | `2a1e9aabeef628790766b329c6c96c2f16dc898d0097a217b95ce8877557cf99` | 769 |
+
+On-chain call fees total **2 028 µtTARI (~0.002 tTARI)**, plus the one-time template publish fee.

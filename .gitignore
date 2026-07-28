@@ -3,3 +3,6 @@ target
 
 # build/run logs
 *.log
+
+# local secret: wallet daemon API key export — NEVER commit
+.tari-env
