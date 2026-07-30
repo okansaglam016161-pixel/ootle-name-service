@@ -18,6 +18,16 @@ contribution, designed to be reused by any Tari project; [Caravel](https://) is 
 Names are **bound (non-transferable) for now** — there is no transfer, fee, or pricing logic. Only
 the base network transaction fee applies.
 
+## Repository layout
+
+| path | what |
+|------|------|
+| [`template/`](template/) | the Rust smart contract (`#[template]`), its local tests, and the WASM build |
+| [`client/`](client/) | `@ootle/name-service` — a TypeScript client any app imports to resolve/register names ([client/README](client/README.md)) |
+
+Resolution is **permissionless**: the client reads names through the public indexer with no wallet,
+no key and no fee. Writes go through a wallet daemon. See [client/README.md](client/README.md).
+
 ## What it does
 
 - **`register(name)`** — claim a name. The caller becomes the owner. Fails if the name is invalid or
@@ -75,9 +85,20 @@ bloat / griefing:
 
 ## Build & test
 
+The contract (in [`template/`](template/)):
+
 ```bash
+cd template
 cargo build-wasm        # compile the template to wasm32-unknown-unknown (alias in .cargo/config.toml)
 cargo test              # local logic tests via tari_template_test_tooling
+```
+
+The client (in [`client/`](client/)):
+
+```bash
+cd client
+npm run typecheck       # tsc, no emit
+npm run demo            # live keyless read proof against the deployed registry (no key, no fee)
 ```
 
 No credentials live in this repo — `tari-cli` authenticates to the wallet daemon via an API key

@@ -1,6 +1,10 @@
 target
 .vscode
 
+# node / TypeScript client build artifacts
+node_modules
+client/dist
+
 # build/run logs
 *.log
 
