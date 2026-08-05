@@ -13,7 +13,8 @@
 
 A decentralised **username registry** on the [Tari Ootle](https://ootle.tari.com). A short name maps
 to an **owner** and an **open set of string key→value records**. It is a standalone Tari ecosystem
-contribution, designed to be reused by any Tari project; [Caravel](https://) is its first consumer.
+contribution, designed to be reused by any Tari project;
+[Caravel](https://github.com/okansaglam016161-pixel/caravel) is its first consumer.
 
 Names are **bound (non-transferable) for now** — there is no transfer, fee, or pricing logic. Only
 the base network transaction fee applies.
@@ -26,7 +27,9 @@ the base network transaction fee applies.
 | [`client/`](client/) | `@ootle/name-service` — a TypeScript client any app imports to resolve/register names ([client/README](client/README.md)) |
 
 Resolution is **permissionless**: the client reads names through the public indexer with no wallet,
-no key and no fee. Writes go through a wallet daemon. See [client/README.md](client/README.md).
+no key and no fee. Writes go through a signer — **either** a wallet daemon (`withSigner`) **or** a
+self-custodial browser wallet (`withBrowserSigner`, the path Caravel uses). See
+[client/README.md](client/README.md).
 
 ## What it does
 
