@@ -80,6 +80,27 @@ export class OnsReader {
   async resolveToNostr(name: string): Promise<string | null> {
     return this.getRecord(name, "nostr");
   }
+
+  /**
+   * Reverse lookup: every name owned by `ownerHex` (a Ristretto public key, hex). The contract has no
+   * owner→names query, but the whole registry is one substate, so we fetch it (the same read every
+   * resolution does) and filter by owner. Keyless and authoritative — works identically on any
+   * device for the same owner. Returns `[]` if the owner holds no names. Sorted by name.
+   */
+  async namesForOwner(ownerKeyHex: string): Promise<NameRecord[]> {
+    const target = ownerKeyHex.trim().toLowerCase();
+    if (!target) return [];
+    const registry = await this.fetchRegistry();
+    const owned: NameRecord[] = [];
+    for (const [name, entry] of Object.entries(registry)) {
+      const owner = ownerHex(entry[0]);
+      if (owner.toLowerCase() === target) {
+        owned.push({ name, owner, records: { ...(entry[1] ?? {}) } });
+      }
+    }
+    owned.sort((a, b) => a.name.localeCompare(b.name));
+    return owned;
+  }
 }
 
 /** Owner is stored as CBOR bytes `{ "@cbor":"bytes", hex:"…" }`; also tolerate a plain hex string. */
