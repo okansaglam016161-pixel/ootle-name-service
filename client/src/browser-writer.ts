@@ -38,7 +38,12 @@ import type { OnsConfig, WriteResult } from "./types.js";
 
 const DEFAULT_INDEXER_URL = "https://ootle-indexer-a.tari.com";
 const RESOURCE_HEX = TARI_RESOURCE_ADDRESS.replace(/^resource_/, "");
-const PAGE_SIZE = 200;
+// The indexer's /utxos endpoint IGNORES `offset` (every offset returns the same set) but HONORS
+// `limit`. Fetch the whole set in ONE request — never paginate by offset (that loops forever once
+// the set exceeds one page). 1000 is honored; 5000 is rejected.
+const FETCH_LIMIT = 1000;
+// Ceiling on the single UTXO-scan request, so a dead indexer surfaces as an error instead of a hang.
+const SCAN_TIMEOUT_MS = 15_000;
 
 // Fee budget revealed for the *estimation* dry-run. Deliberately GENEROUS — comfortably above any
 // ONS write's real cost. The confidential fee path consumes the whole revealed budget, so the true
@@ -48,6 +53,10 @@ const PAGE_SIZE = 200;
 // the real submit reveals only the estimate + a small margin. The wallet needs one UTXO larger than
 // this to *estimate* (registration itself needs far less).
 const DRY_RUN_REVEAL = 50_000n;
+
+// Ceiling on the dry-run request. A dry-run is simulated, not committed, so it should return well
+// inside this; the transport aborts the fetch past it rather than hanging the caller forever.
+const DRY_RUN_TIMEOUT_MS = 30_000;
 
 // Safety margin added over the estimate when actually submitting. The whole revealed budget is
 // consumed on-chain (the fee overcharge is NOT refunded), so keep this small — it exists only to
@@ -100,38 +109,49 @@ interface OwnedUtxo {
 /** Scan the indexer for confidential UTXOs this wallet owns (same logic as confidentialSend). */
 async function scanUtxos(indexerUrl: string, crypto: WasmStealthCrypto, viewSecret: Uint8Array): Promise<OwnedUtxo[]> {
   const owned: OwnedUtxo[] = [];
-  let offset = 0;
-  for (;;) {
-    const url = `${indexerUrl}/utxos?resource_address=${RESOURCE_HEX}&limit=${PAGE_SIZE}&offset=${offset}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`UTXO scan HTTP ${res.status}`);
-    const body = (await res.json()) as { utxos?: [string, unknown][] } | [string, unknown][];
-    const page = Array.isArray(body) ? body : (body.utxos ?? []);
-    if (page.length === 0) break;
-    for (const [commitmentHex, utxoBody] of page) {
-      const substateId = `utxo_${RESOURCE_HEX}_${commitmentHex}`;
-      const fakeResponse = { version: 0, verified: false, substate: { Utxo: utxoBody } };
-      const decrypted = await decryptOwnedUtxo(
-        crypto,
-        viewSecret,
-        fakeResponse as Parameters<typeof decryptOwnedUtxo>[2],
-        substateId,
-      );
-      if (decrypted !== null) {
-        const output = (utxoBody as { output?: { output?: { public_nonce?: string } } })?.output?.output;
-        if (!output?.public_nonce) continue;
-        owned.push({
-          substateId,
-          commitment: fromHex(commitmentHex),
-          nonce: fromHex(output.public_nonce),
-          value: decrypted.value,
-          mask: decrypted.mask,
-        });
-      }
-    }
-    if (page.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
+
+  // ONE request — the indexer ignores `offset`, so paginating by it would re-fetch the same set
+  // forever. Fetch the whole set with a big `limit` instead.
+  const url = `${indexerUrl}/utxos?resource_address=${RESOURCE_HEX}&limit=${FETCH_LIMIT}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(SCAN_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`UTXO scan HTTP ${res.status}`);
+  const body = (await res.json()) as { utxos?: [string, unknown][] } | [string, unknown][];
+  const rows = Array.isArray(body) ? body : (body.utxos ?? []);
+
+  // Ceiling guard: a full FETCH_LIMIT means there may be inputs we couldn't see. An actually
+  // unfundable set still fails below with the explicit "can't fund the fee from one UTXO" error.
+  if (rows.length >= FETCH_LIMIT) {
+    console.warn(`[ONS] UTXO fetch hit the indexer limit (${FETCH_LIMIT}) — fee input selection may be incomplete`);
   }
+
+  // Dedup by commitment — the indexer can return the same UTXO more than once; fee input selection
+  // must not consider a duplicate.
+  const seen = new Set<string>();
+  for (const [commitmentHex, utxoBody] of rows) {
+    if (seen.has(commitmentHex)) continue;
+    seen.add(commitmentHex);
+
+    const substateId = `utxo_${RESOURCE_HEX}_${commitmentHex}`;
+    const fakeResponse = { version: 0, verified: false, substate: { Utxo: utxoBody } };
+    const decrypted = await decryptOwnedUtxo(
+      crypto,
+      viewSecret,
+      fakeResponse as Parameters<typeof decryptOwnedUtxo>[2],
+      substateId,
+    );
+    if (decrypted !== null) {
+      const output = (utxoBody as { output?: { output?: { public_nonce?: string } } })?.output?.output;
+      if (!output?.public_nonce) continue;
+      owned.push({
+        substateId,
+        commitment: fromHex(commitmentHex),
+        nonce: fromHex(output.public_nonce),
+        value: decrypted.value,
+        mask: decrypted.mask,
+      });
+    }
+  }
+
   return owned;
 }
 
@@ -228,11 +248,17 @@ async function dryRunSubmit(provider: IndexerProvider, envelope: unknown): Promi
   // `getTransport()` is present at runtime but absent from the (older) build-time indexer types, so
   // reach it structurally. This is the same transport `submitTransaction` posts through.
   const transport = (provider as unknown as {
-    getClient(): { getTransport(): { sendPost(path: string, body: unknown): Promise<unknown> } };
+    getClient(): {
+      getTransport(): {
+        sendPost(path: string, body: unknown, opts?: { timeout_millis?: number }): Promise<unknown>;
+      };
+    };
   })
     .getClient()
     .getTransport();
-  const resp = (await transport.sendPost("transactions/dry-run", { transaction: envelope })) as {
+  const resp = (await transport.sendPost("transactions/dry-run", { transaction: envelope }, {
+    timeout_millis: DRY_RUN_TIMEOUT_MS,
+  })) as {
     transaction_id?: string;
     result?: { finalize?: Record<string, unknown> };
   };
