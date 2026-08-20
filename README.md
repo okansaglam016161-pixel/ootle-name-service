@@ -1,15 +1,38 @@
 # ONS — Ootle Name Service
 
-> ### Version pin (must match the deployed Tari Ootle engine)
+> ### Version pin (must TRACK the deployed Tari Ootle engine)
 > ```toml
-> tari_template_lib = "0.29"   # resolves to 0.29.0 (crates.io)
+> tari_template_lib = "0.31"           # esmeralda / tari-ootle v0.39.x
+> tari_ootle_template_build = "0.11"
+> tari_template_test_tooling = "0.39"
+> # edition = "2024"
 > ```
-> This is the exact `tari_template_lib` dependency validated by ONS-0: it compiles to `wasm32`
-> and matches esmeralda's current engine line (tari-ootle v0.36/v0.37 → template_lib 0.29.0), which
-> is also the newest `tari_template_lib` published. **Do not** bump this or switch to a
-> `git`/`branch = "development"` pin without re-validating against the live engine — a template built
-> against a version ahead of the network will fail to publish. Companion pins from the same toolchain:
-> `tari_template_test_tooling = "0.36"`, `tari_ootle_template_build = "0.7"`, `edition = "2024"`.
+> **The pin has to match the network in BOTH directions.** A template built against a lib *ahead* of
+> the engine fails to publish; one built against a lib *behind* it fails at runtime. The second half
+> is the one that bites, because it is silent: the crate still compiles and `cargo build-wasm` still
+> succeeds, so nothing warns you. Only the deployed template misbehaves.
+>
+> That is exactly what happened at **tari-ootle 0.39.0**. `Amount`'s wire format changed to minicbor's
+> native integer encoding (it was a two-element digit array), so a template built on the old lib
+> cannot decode an `Amount` from the engine, or produce one the engine can read. The 0.39 release
+> notes put it plainly: *"Templates must be rebuilt and republished against the latest
+> `tari_template_lib`."* The testnet reset wiped the deployment at the same time, so ONS needed a
+> rebuild and a fresh publish regardless.
+>
+> **Cargo will not do this for you.** `"0.31"` means `>=0.31.0, <0.32.0` — a new minor from a network
+> upgrade is never picked up by `cargo update` alone. Bumping is a deliberate edit, and the three
+> pins move together as one toolchain set.
+>
+> **To check what the network is on before you publish:**
+> ```bash
+> curl -s https://ootle-indexer-a.tari.com/network     # -> {"network":"esmeralda","epoch":…}
+> ```
+> then match that engine version against the crate versions in the corresponding
+> [tari-ootle release](https://github.com/tari-project/tari-ootle/releases) — the template crates are
+> published alongside it, on their own version lines (engine 0.39 → `template_lib` 0.31,
+> `template_build` 0.11, `test_tooling` 0.39). Re-validate with `cargo build-wasm && cargo test`
+> after any bump, and republish: a rebuilt template gets a NEW `template_address`, so every consumer
+> pinning the old one (see [Deployment](#deployment-esmeralda-testnet)) has to be updated too.
 
 A decentralised **username registry** on the [Tari Ootle](https://ootle.tari.com). A short name maps
 to an **owner** and an **open set of string key→value records**. It is a standalone Tari ecosystem

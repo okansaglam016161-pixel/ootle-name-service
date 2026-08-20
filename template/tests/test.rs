@@ -1,5 +1,12 @@
 //! ONS local logic tests (tari_template_test_tooling). Proves registration, uniqueness, the
 //! owner-only write authorisation (the core security property), reads, and name validation.
+//!
+//! `max_epoch` (Ootle 0.39) is taken from `test.current_epoch()` rather than a literal. The harness
+//! pins its virtual CurrentEpoch at 0 and executes synchronously, so there is no window for a
+//! transaction to age out — and this is exactly what the tooling's own `TemplateTest::transaction`
+//! builder passes (`Transaction::builder(Network::LocalNet, self.current_epoch())`). A hardcoded
+//! `Epoch(N)` would say the same thing today while silently drifting if a test ever moves the
+//! harness's epoch with `set_virtual_substate`.
 
 use std::collections::BTreeMap;
 use tari_template_lib::prelude::{ComponentAddress, RistrettoPublicKeyBytes};
@@ -14,7 +21,7 @@ fn deploy(test: &mut TemplateTest) -> ComponentAddress {
 // Register `name` as the DEFAULT account (caller A), expecting success.
 fn register_ok(test: &mut TemplateTest, ons: ComponentAddress, name: &str) {
     test.execute_expect_success(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "register", args![name])
             .build_and_seal(test.secret_key()),
         vec![test.owner_proof()],
@@ -24,7 +31,7 @@ fn register_ok(test: &mut TemplateTest, ons: ComponentAddress, name: &str) {
 // Owner (default account A) sets a record, expecting success.
 fn set_record_ok(test: &mut TemplateTest, ons: ComponentAddress, name: &str, key: &str, value: &str) {
     test.execute_expect_success(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "set_record", args![name, key, value])
             .build_and_seal(test.secret_key()),
         vec![test.owner_proof()],
@@ -57,7 +64,7 @@ fn duplicate_registration_is_rejected() {
 
     // Registering the SAME name again must fail (global uniqueness in the shared component).
     test.execute_expect_failure(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "register", args!["okz"])
             .build_and_seal(test.secret_key()),
         vec![test.owner_proof()],
@@ -66,7 +73,7 @@ fn duplicate_registration_is_rejected() {
     // ...and a DIFFERENT caller can't grab it either.
     let (_acct_b, proof_b, secret_b) = test.create_funded_account();
     test.execute_expect_failure(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "register", args!["okz"])
             .build_and_seal(&secret_b),
         vec![proof_b],
@@ -110,7 +117,7 @@ fn non_owner_cannot_set_record() {
     // Account B — a different signer — tries to point "okz" at B's own keys. Must be rejected.
     let (_acct_b, proof_b, secret_b) = test.create_funded_account();
     test.execute_expect_failure(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "set_record", args!["okz", "nostr", "npub1_attacker"])
             .build_and_seal(&secret_b),
         vec![proof_b],
@@ -132,7 +139,7 @@ fn caller_is_owner_binding_is_unforgeable() {
     register_ok(&mut test, ons, "alice"); // caller = default account A
     let (_acct_b, proof_b, secret_b) = test.create_funded_account();
     test.execute_expect_success(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "register", args!["bob"])
             .build_and_seal(&secret_b),
         vec![proof_b.clone()],
@@ -141,7 +148,7 @@ fn caller_is_owner_binding_is_unforgeable() {
     // A can write to "alice"; B cannot write to "alice".
     set_record_ok(&mut test, ons, "alice", "nostr", "npub1_alice");
     test.execute_expect_failure(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "set_record", args!["alice", "nostr", "npub1_hijack"])
             .build_and_seal(&secret_b),
         vec![proof_b.clone()],
@@ -149,13 +156,13 @@ fn caller_is_owner_binding_is_unforgeable() {
 
     // B can write to "bob"; A cannot write to "bob".
     test.execute_expect_success(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "set_record", args!["bob", "nostr", "npub1_bob"])
             .build_and_seal(&secret_b),
         vec![proof_b],
     );
     test.execute_expect_failure(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "set_record", args!["bob", "nostr", "npub1_hijack"])
             .build_and_seal(test.secret_key()),
         vec![test.owner_proof()],
@@ -205,7 +212,7 @@ fn invalid_names_are_rejected() {
 
     for bad in bad_names {
         test.execute_expect_failure(
-            Transaction::builder_localnet()
+            Transaction::builder_localnet(test.current_epoch())
                 .call_method(ons, "register", args![bad])
                 .build_and_seal(test.secret_key()),
             vec![test.owner_proof()],
@@ -215,7 +222,7 @@ fn invalid_names_are_rejected() {
     // A valid boundary case (exactly 32 chars, allowed charset) must SUCCEED.
     let ok32 = "a".repeat(32);
     test.execute_expect_success(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "register", args![ok32.clone()])
             .build_and_seal(test.secret_key()),
         vec![test.owner_proof()],
@@ -229,7 +236,7 @@ fn set_record_on_unregistered_name_is_rejected() {
     let mut test = TemplateTest::my_crate();
     let ons = deploy(&mut test);
     test.execute_expect_failure(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "set_record", args!["ghost", "nostr", "npub1"])
             .build_and_seal(test.secret_key()),
         vec![test.owner_proof()],
@@ -245,7 +252,7 @@ fn oversized_record_value_is_rejected() {
 
     let too_long = "x".repeat(513);
     test.execute_expect_failure(
-        Transaction::builder_localnet()
+        Transaction::builder_localnet(test.current_epoch())
             .call_method(ons, "set_record", args!["okz", "big", too_long])
             .build_and_seal(test.secret_key()),
         vec![test.owner_proof()],

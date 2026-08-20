@@ -3,15 +3,35 @@ name = "ootle_name_service"
 version = "0.1.0"
 authors = ["Okan Saglam <okansaglam016161@gmail.com>"]
 edition = "2024"
+# description / license / repository are read into the PUBLISHED template metadata by
+# tari_ootle_template_build, alongside [package.metadata.tari-template] below. They are baked into
+# the template at publish time and a correction costs a new template address, so they are filled in
+# before the first publish rather than after.
+description = "A decentralised username registry: each name maps to an owner and an open set of string key/value records. Ownership is the registering transaction's signer key; names are bound and non-transferable."
+license = "BSD-3-Clause"
+repository = "https://github.com/okansaglam016161-pixel/ootle-name-service"
 
 [package.metadata.tari-template]
+tags = ["name-service", "registry", "identity", "username", "nostr"]
+category = "identity"
+documentation = "https://github.com/okansaglam016161-pixel/ootle-name-service#readme"
+homepage = "https://github.com/okansaglam016161-pixel/ootle-name-service"
+# Deliberately NOT set, each for a reason:
+#   logo_url    — we have no logo; a URL that 404s is worse than an absent field.
+#   commit_hash — it exists for reproducible-build verification, so it must name the commit the WASM
+#                 was actually built from. Set it only when this branch is committed and the binary
+#                 is rebuilt from that exact commit.
+#   supersedes  — it names the template this one replaces, and the obvious candidate
+#                 (template_4af4c620… from ONS-2) no longer exists: the esmeralda reset wiped it.
+#                 Pointing at an address that is not on this chain is at best meaningless and at
+#                 worst rejected at publish.
 
 
 [dependencies]
-tari_template_lib = { version = "0.29" }
+tari_template_lib = { version = "0.31" }
 
 [dev-dependencies]
-tari_template_test_tooling = "0.36"
+tari_template_test_tooling = "0.39"
 
 
 
@@ -20,4 +40,36 @@ tari_template_test_tooling = "0.36"
 crate-type = ["cdylib"]
 
 [build-dependencies]
-tari_ootle_template_build = "0.7"
+tari_ootle_template_build = "0.11"
+
+# Size optimisations for the published WASM. `tari build` and `tari publish` already pass these via
+# `cargo --config`, but a plain `cargo build --release` does not — so without this section the two
+# commands produce different binaries (196 KiB vs 107 KiB measured), and the publish fee is priced
+# on size. Suggested by `tari lint [cargo::release-profile]`.
+[profile.release]
+opt-level = 's'     # Optimize for size.
+lto = true          # Enable Link Time Optimization.
+codegen-units = 1   # Reduce number of codegen units to increase optimizations.
+panic = 'abort'     # Abort on panic.
+strip = true        # Strip symbols from the binary.
+
+# Wasmer + Cranelift are extremely slow compiled in debug mode, which makes the template tests
+# painfully slow (~10x). Optimise just those crates in dev/test builds; our own code stays
+# unoptimised and debuggable. Suggested by `tari lint [cargo::test-runtime-profile]`.
+[profile.dev.package.wasmer]
+opt-level = 2
+
+[profile.dev.package.wasmer-compiler]
+opt-level = 2
+
+[profile.dev.package.wasmer-compiler-cranelift]
+opt-level = 2
+
+[profile.dev.package.cranelift-codegen]
+opt-level = 2
+
+[profile.dev.package.cranelift-frontend]
+opt-level = 2
+
+[profile.dev.package.cranelift-entity]
+opt-level = 2
