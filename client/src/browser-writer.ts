@@ -21,6 +21,7 @@ import {
   createOutput,
   decryptOwnedUtxo,
   generateSealKeypair,
+  resolveMaxEpoch,
   resolveTransaction,
   sealTransaction,
   serializeUnsignedTx,
@@ -54,15 +55,27 @@ const SCAN_TIMEOUT_MS = 15_000;
 // this to *estimate* (registration itself needs far less).
 const DRY_RUN_REVEAL = 50_000n;
 
+// Epochs of validity a transaction we build now should carry (Ootle 0.39: `max_epoch` is mandatory
+// and the builder throws without it). Matches Caravel's crypto/epoch.ts so the two consumers of
+// this chain agree. The network caps the window at MAX_TRANSACTION_VALIDITY_EPOCHS (2160), and an
+// epoch is ~20 min, so 10 is a few hours of margin at 0.46% of the ceiling — enough that a
+// transaction never expires on an epoch boundary, nowhere near `ValidityWindowTooLong`.
+const MAX_EPOCH_LEAD = 10;
+
 // Ceiling on the dry-run request. A dry-run is simulated, not committed, so it should return well
 // inside this; the transport aborts the fetch past it rather than hanging the caller forever.
 const DRY_RUN_TIMEOUT_MS = 30_000;
 
-// Safety margin added over the estimate when actually submitting. The whole revealed budget is
-// consumed on-chain (the fee overcharge is NOT refunded), so keep this small — it exists only to
-// absorb tiny fee drift between the dry-run and the real submit.
+// Safety margin added over the estimate when actually submitting.
+//
+// WIDENED 2% -> 25%. The whole revealed budget is consumed on-chain here (the fee overcharge is NOT
+// refunded on this stealth path), so the margin is real money and 2% looked like the prudent
+// choice. It was too tight to be safe: Caravel measured the dry-run-to-actual drift on this same
+// engine at 2.7%, which a 2% margin turns into a hard abort — losing the whole fee AND the write,
+// which costs far more than the margin ever saves. The trade is asymmetric, so it should lean
+// generous. In absolute terms an ONS write costs ~1 400 uTARI, so 25% is ~350 uTARI.
 function withFeeMargin(required: bigint): bigint {
-  const margin = (required * 2n) / 100n; // +2%
+  const margin = (required * 25n) / 100n;
   return required + (margin > 100n ? margin : 100n);
 }
 
@@ -394,7 +407,11 @@ export class OnsBrowserWriter {
     const proof = await signBalanceProof(crypto, utxo.mask, outputMask, insStmt, outsStmt);
     const stmt = new StealthTransferStatement(insStmt, outsStmt, proof);
 
-    const builder = new TransactionBuilder(Network.Esmeralda);
+    // 0.39: `max_epoch` is mandatory, so the builder needs the chain tip before it exists. Read
+    // here — after the range proofs above, immediately before the builder — so none of the validity
+    // window is spent generating them locally.
+    const maxEpoch = await resolveMaxEpoch(provider, MAX_EPOCH_LEAD);
+    const builder = new TransactionBuilder(Network.Esmeralda, maxEpoch);
     // Fee: StealthTransfer → bucket on workspace → PayFeeFromBucket (identical to confidentialSend).
     builder.addFeeInstruction(
       stealthTransferInstruction({ resourceAddress: TARI_RESOURCE_ADDRESS, revealedInputBucket: null, statement: stmt }, () => ({ id: 0, offset: null })),
