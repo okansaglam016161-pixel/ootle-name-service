@@ -12,7 +12,7 @@ import type { BrowserSigner, OnsBrowserWriter } from "./browser-writer.js";
 export type { NameRecord, OnsConfig, DaemonSigner, WriteResult } from "./types.js";
 export { OnsReader } from "./reader.js";
 export type { OnsWriter } from "./writer.js";
-export type { BrowserSigner, OnsBrowserWriter } from "./browser-writer.js";
+export type { BrowserSigner, OnsBrowserWriter, OwnedFeeUtxo } from "./browser-writer.js";
 
 /** An ONS client: keyless reads (inherited from {@link OnsReader}) plus opt-in writes. */
 export class OnsClient extends OnsReader {

@@ -40,7 +40,15 @@ declare module "@tari-project/ootle" {
 
   export class WasmStealthCrypto {
     constructor(network: number);
-    generateOutputsStatement(outputs: unknown[], maxFee: bigint): Promise<{ statement: unknown; outputMask: unknown }>;
+    /**
+     * Ootle 0.42 (SDK 0.6) replaced the bare revealed amount with `{ amount, receiver }`: the engine
+     * creates the revealed bucket only if `receiver`'s badge is in the transaction's auth scope.
+     * The old `bigint` form is what this stub declared before, and it would have compiled cleanly.
+     */
+    generateOutputsStatement(
+      outputs: unknown[],
+      revealed: { amount: bigint; receiver: Uint8Array } | null,
+    ): Promise<{ statement: unknown; outputMask: unknown }>;
     buildInputsStatement(inputs: unknown[], revealed: bigint): Promise<unknown>;
   }
 
@@ -110,6 +118,8 @@ declare module "@tari-project/ootle-indexer" {
 declare module "@tari-project/ootle-secret-key-wallet" {
   export interface SecretKeyWallet {
     getViewSecret(): Promise<Uint8Array>;
+    /** The owner public key — the 0.42 revealed-output receiver. */
+    getPublicKey(): Promise<Uint8Array>;
     addStealthSignature(
       unsignedJson: unknown,
       nonce: Uint8Array,

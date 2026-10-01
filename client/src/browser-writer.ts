@@ -87,6 +87,28 @@ export interface BrowserSigner {
   senderAddress: string;
   /** Indexer base URL. Defaults to the esmeralda public indexer. */
   indexerUrl?: string;
+  /**
+   * The wallet's spendable stealth outputs. When given, the fee input is selected from these
+   * instead of the built-in scan — which reads ONE page (the oldest 1000 rows) of ONE indexer's
+   * `/utxos`, and so finds nothing for a wallet whose coins are all newer than that page. A wallet
+   * that already keeps an accurate owned set (paginated, multi-indexer, spend-aware) should pass it.
+   */
+  ownedUtxos?: () => Promise<OwnedFeeUtxo[]>;
+  /**
+   * Called once a real (non-dry-run) transaction is submitted, with the substate ids of the
+   * stealth inputs it spends, before the result is polled. Lets a wallet mark the fee input as
+   * spent immediately rather than waiting for its next scan.
+   */
+  onSubmitted?: (txId: string, spentInputIds: string[]) => void;
+}
+
+/** One spendable stealth output — what `ownedUtxos` returns and the built-in scan produces. */
+export interface OwnedFeeUtxo {
+  substateId: string;
+  commitment: Uint8Array;
+  nonce: Uint8Array;
+  value: bigint;
+  mask: Mask;
 }
 
 function fromHex(h: string): Uint8Array {
@@ -111,17 +133,9 @@ class StaticSigner implements Signer {
   }
 }
 
-interface OwnedUtxo {
-  substateId: string;
-  commitment: Uint8Array;
-  nonce: Uint8Array;
-  value: bigint;
-  mask: Mask;
-}
-
 /** Scan the indexer for confidential UTXOs this wallet owns (same logic as confidentialSend). */
-async function scanUtxos(indexerUrl: string, crypto: WasmStealthCrypto, viewSecret: Uint8Array): Promise<OwnedUtxo[]> {
-  const owned: OwnedUtxo[] = [];
+async function scanUtxos(indexerUrl: string, crypto: WasmStealthCrypto, viewSecret: Uint8Array): Promise<OwnedFeeUtxo[]> {
+  const owned: OwnedFeeUtxo[] = [];
 
   // ONE request — the indexer ignores `offset`, so paginating by it would re-fetch the same set
   // forever. Fetch the whole set with a big `limit` instead.
@@ -385,7 +399,9 @@ export class OnsBrowserWriter {
     const crypto = new WasmStealthCrypto(Network.Esmeralda);
     const viewSecret = await wallet.getViewSecret();
 
-    const utxos = await scanUtxos(this.indexerUrl, crypto, viewSecret);
+    const utxos = this.signer.ownedUtxos
+      ? await this.signer.ownedUtxos()
+      : await scanUtxos(this.indexerUrl, crypto, viewSecret);
     if (utxos.length === 0) throw new Error("No confidential UTXOs found — this wallet needs a balance to pay the fee.");
     const candidates = utxos.filter((u) => u.value > feeBudget).sort((a, b) => Number(a.value - b.value));
     if (candidates.length === 0) {
@@ -399,9 +415,14 @@ export class OnsBrowserWriter {
     const changeAmount = utxo.value - feeBudget;
 
     // Reveal feeBudget for the fee; send the rest back to self as change.
+    //
+    // Ootle 0.42: the revealed output names a RECEIVER, and the engine only creates its bucket if
+    // that key's badge is in the transaction's auth scope. That is the wallet's owner key, which
+    // signs below through `ootleWallet` (not StaticSigner — its public key is zeros).
+    const ownerPk = await wallet.getPublicKey();
     const { statement: outsStmt, outputMask } = await crypto.generateOutputsStatement(
       [createOutput({ destination: senderAddress, amount: changeAmount, resourceAddress: TARI_RESOURCE_ADDRESS })],
-      feeBudget,
+      { amount: feeBudget, receiver: ownerPk },
     );
     const insStmt = await crypto.buildInputsStatement([new StealthInput(utxo.commitment)], 0n);
     const proof = await signBalanceProof(crypto, utxo.mask, outputMask, insStmt, outsStmt);
@@ -444,6 +465,7 @@ export class OnsBrowserWriter {
     }
     const sub = await provider.submitTransaction(envelope);
     const txId = sub.transaction_id as string;
+    this.signer.onSubmitted?.(txId, [utxo.substateId]);
     const r = await pollResult(this.indexerUrl, txId);
     provider.stopWatcher?.();
     return { ...r, txId };
