@@ -2,9 +2,9 @@
 
 > ### Version pin (must TRACK the deployed Tari Ootle engine)
 > ```toml
-> tari_template_lib = "0.31"           # esmeralda / tari-ootle v0.39.x
-> tari_ootle_template_build = "0.11"
-> tari_template_test_tooling = "0.39"
+> tari_template_lib = "0.33"           # esmeralda / tari-ootle v0.42.x
+> tari_ootle_template_build = "0.13"
+> tari_template_test_tooling = "0.42"
 > # edition = "2024"
 > ```
 > **The pin has to match the network in BOTH directions.** A template built against a lib *ahead* of
@@ -29,8 +29,8 @@
 > ```
 > then match that engine version against the crate versions in the corresponding
 > [tari-ootle release](https://github.com/tari-project/tari-ootle/releases) — the template crates are
-> published alongside it, on their own version lines (engine 0.39 → `template_lib` 0.31,
-> `template_build` 0.11, `test_tooling` 0.39). Re-validate with `cargo build-wasm && cargo test`
+> published alongside it, on their own version lines (engine 0.42 → `template_lib` 0.33,
+> `template_build` 0.13, `test_tooling` 0.42; engine 0.39 was 0.31 / 0.11 / 0.39). Re-validate with `cargo build-wasm && cargo test`
 > after any bump, and republish: a rebuilt template gets a NEW `template_address`, so every consumer
 > pinning the old one (see [Deployment](#deployment-esmeralda-testnet)) has to be updated too.
 
@@ -131,6 +131,24 @@ No credentials live in this repo — `tari-cli` authenticates to the wallet daem
 passed at publish time (`--api-key` / `TARI_WALLET_DAEMON_API_KEY`), never written to disk here.
 
 ## Deployment (esmeralda testnet)
+
+### Current — Ootle 0.42 (published 2026-10-01, epoch 11714)
+
+Built from `793428f` (`tari_template_lib` 0.33, `tari_ootle_template_build` 0.13, `tari_template_test_tooling`
+0.42) and published with `tari-ootle-cli` 0.28 against `tari_ootle_walletd` 0.42, paid from the `deployer`
+account's revealed balance. The CLI runs `wasm-opt` before publishing, so the on-chain binary (97 983 bytes)
+is the optimised form of the 111 900-byte `cargo build` output.
+
+| what | value |
+|------|-------|
+| **Template** (`OotleNameService`) | `template_ceb0ef6b0ae298cbc412fd7e1054c2bf2e7204a1d58bfe979976e6918ae6536f` |
+| Publish tx | `a1a8fa9ec087e4a58e9c6210e0f0913aeeb56eecfe8bb6e59176a4e4ded59ac4` — Commit / Accept, fee 727 428 µtTARI |
+| Template author (deployer owner key) | `20db90bffb62905d14b75369de9de8523d859bdec5f75e36929fbf9099781661` |
+| Metadata hash | `122048ed57f9b572b028d42c8db1e04ad8d9467d2630c48faa53302a01be8f4c68b9` (commit_hash `793428f`) |
+| On-chain binary sha256 | `9c5c2f94999a6a9953b6e2019b9fd9d4be9cb9126c87bea76bf42382349e1dc0` |
+| **Registry component** (shared, `new()`) | not instantiated yet |
+
+### Previous — ONS-2 (wiped by a testnet reset; kept for history)
 
 Local logic proven (ONS-1), then published and exercised end-to-end on-chain (ONS-2).
 
