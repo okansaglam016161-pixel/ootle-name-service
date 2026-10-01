@@ -146,7 +146,21 @@ is the optimised form of the 111 900-byte `cargo build` output.
 | Template author (deployer owner key) | `20db90bffb62905d14b75369de9de8523d859bdec5f75e36929fbf9099781661` |
 | Metadata hash | `122048ed57f9b572b028d42c8db1e04ad8d9467d2630c48faa53302a01be8f4c68b9` (commit_hash `793428f`) |
 | On-chain binary sha256 | `9c5c2f94999a6a9953b6e2019b9fd9d4be9cb9126c87bea76bf42382349e1dc0` |
-| **Registry component** (shared, `new()`) | not instantiated yet |
+| **Registry component** (shared, `new()`) | `component_0109d5287493affc06ec8902fcbf85bd2362832580feeac2a70cba7e5ac6da4d` |
+
+The registry was instantiated with `OnsWriter.instantiate()` (client/src/writer.ts): daemon-sealed by the
+`deployer` account, fee from its revealed balance, dry-run first, final Accept required. Both public
+indexers read the component back as version 0 of the template above, access rules `AllowAll`, empty
+registry; its component owner rule is the deployer key.
+
+| step | tx id | result | fee (µtTARI) |
+|------|-------|--------|--------------|
+| `new()` instantiate | `6e4c2a8c4a1140196fc08a07e833b7205cd04de1997b6cebc56e064b735fb8ef` | Commit / Accept | 1 581 |
+| `register("cns042test")` — throwaway test name | `c6da1ced2d5d0d75f94ab8959162a7a638f60b5bb859c31d72a8621fafe5dbdc` | Commit / Accept | 1 761 |
+
+`cns042test` resolves through the keyless reader (`createOnsClient({ component }).resolveName`, no key) to
+owner `20db90bf…1661`, the deployer, with no records. Names are bound to their registrant and cannot be
+transferred, so this test name stays owned by the deployer.
 
 ### Previous — ONS-2 (wiped by a testnet reset; kept for history)
 
