@@ -22,9 +22,10 @@ homepage = "https://github.com/okansaglam016161-pixel/ootle-name-service"
 # It necessarily names the PARENT commit rather than the one containing this line — no commit can
 # contain its own hash. That is sound here because commit_hash reaches only the metadata CBOR and
 # never the binary: building with and without it was verified to produce the same WASM
-# (sha256 a40fac6c19b4c89ee54eacb129f3cceff02743442edd252c79442196756adcfc both ways). So the code
-# guarantee holds exactly; only this one metadata field differs from what the named commit rebuilds.
-commit_hash = "0a471c5885b39eb4d42c5c6196ae96641750ec49"
+# (Ootle 0.42 build: sha256 b2de8c329a9934e93a7653d94b29ad48d9c42eeae78547a854d9621727f96006 both
+# ways). So the code guarantee holds exactly; only this one metadata field differs from what the
+# named commit rebuilds.
+commit_hash = "793428f77d27850f871840cb3739ebb388328766"
 # Deliberately NOT set:
 #   logo_url    — we have no logo; a URL that 404s is worse than an absent field.
 #   supersedes  — it names the template this one replaces, and the obvious candidate
