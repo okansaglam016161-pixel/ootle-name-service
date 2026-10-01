@@ -20,6 +20,23 @@ const WAIT_SECS = 30;
 // and the builder throws without it). Same value as browser-writer.ts and Caravel's crypto/epoch.ts.
 const MAX_EPOCH_LEAD = 10;
 
+/** What a dry run returns when nothing is submitted. */
+export interface DryRunResult {
+  dryRun: true;
+  /** The engine's fee receipt for the simulation, as the daemon returned it. */
+  feeReceipt: Record<string, unknown> | null;
+  /** Components the simulation created (excluding the fee account). */
+  newComponents: string[];
+}
+
+/** Component ids an Accept diff created or touched, excluding the fee account. */
+function createdComponents(result: Record<string, unknown>, feeAccount: string): string[] {
+  const ups = ((result.Accept as { up_substates?: unknown[] } | undefined)?.up_substates ?? []) as unknown[];
+  return ups
+    .map((u) => (Array.isArray(u) ? u[0] : undefined))
+    .filter((id): id is string => typeof id === "string" && id.startsWith("component_") && id !== feeAccount);
+}
+
 /** ONS writes via a wallet daemon. Obtain one with `createOnsClient(cfg).withSigner(signer)`. */
 export class OnsWriter {
   private readonly component: string;
@@ -74,11 +91,29 @@ export class OnsWriter {
   }
 
   private async call(methodName: string, args: unknown[]): Promise<WriteResult> {
+    const r = (await this.execute(methodName, (b) =>
+      b.callMethod({ componentAddress: this.component as never, methodName }, args as never),
+    )) as WriteResult;
+    return { transactionId: r.transactionId, fee: r.fee };
+  }
+
+  /**
+   * One daemon-sealed transaction: fee from the signer account's revealed balance, then whatever
+   * `addCalls` adds. Dry-run first (free); a non-Accept stops before spending. With `dryRunOnly`,
+   * returns the dry run's outcome and submits nothing.
+   */
+  private async execute(
+    label: string,
+    addCalls: (b: TransactionBuilder) => TransactionBuilder,
+    opts: { dryRunOnly?: boolean } = {},
+  ): Promise<WriteResult | DryRunResult> {
     const acct = await this.account();
-    const built = new TransactionBuilder(this.network, await this.maxEpoch())
-      .feeTransactionPayFromComponent(acct.component as never, MAX_FEE)
-      .callMethod({ componentAddress: this.component as never, methodName }, args as never)
-      .buildUnsignedTransaction() as Record<string, unknown>;
+    const built = addCalls(
+      new TransactionBuilder(this.network, await this.maxEpoch()).feeTransactionPayFromComponent(
+        acct.component as never,
+        MAX_FEE,
+      ),
+    ).buildUnsignedTransaction() as Record<string, unknown>;
 
     const req = {
       transaction: {
@@ -103,13 +138,19 @@ export class OnsWriter {
     };
 
     // Dry-run first (free): validate + estimate the fee. A non-Accept outcome stops before spending.
-    const dry = await this.jrpc<{ result?: { finalize?: { result?: Record<string, unknown> } } }>(
-      "transactions.submit_dry_run",
-      req,
-    );
+    const dry = await this.jrpc<{
+      result?: { finalize?: { result?: Record<string, unknown>; fee_receipt?: Record<string, unknown> } };
+    }>("transactions.submit_dry_run", req);
     const dtr = dry?.result?.finalize?.result;
     if (!dtr || !("Accept" in dtr)) {
-      throw new Error(`ONS ${methodName} dry-run did not commit: ${JSON.stringify(dtr)}`);
+      throw new Error(`ONS ${label} dry-run did not commit: ${JSON.stringify(dtr)}`);
+    }
+    if (opts.dryRunOnly) {
+      return {
+        dryRun: true,
+        feeReceipt: dry?.result?.finalize?.fee_receipt ?? null,
+        newComponents: createdComponents(dtr, acct.component),
+      };
     }
 
     const sub = await this.jrpc<{ transaction_id: string }>("transactions.submit", req);
@@ -120,12 +161,43 @@ export class OnsWriter {
       timed_out?: boolean;
     }>("transactions.wait_result", { transaction_id: txId, timeout_secs: WAIT_SECS });
 
-    if (wait.timed_out) throw new Error(`ONS ${methodName} timed out after ${WAIT_SECS}s (tx ${txId})`);
+    if (wait.timed_out) throw new Error(`ONS ${label} timed out after ${WAIT_SECS}s (tx ${txId})`);
     const wtr = wait?.result?.result;
     if (!wtr || !("Accept" in wtr)) {
-      throw new Error(`ONS ${methodName} rejected on-chain: ${JSON.stringify(wtr)}`);
+      throw new Error(`ONS ${label} rejected on-chain: ${JSON.stringify(wtr)}`);
     }
-    return { transactionId: txId, fee: BigInt(wait.final_fee ?? 0) };
+    return {
+      transactionId: txId,
+      fee: BigInt(wait.final_fee ?? 0),
+      newComponents: createdComponents(wtr, acct.component),
+    } as WriteResult;
+  }
+
+  /**
+   * Deploy the shared registry: call the template's `new()` from a daemon account, which pays the
+   * fee from its revealed balance. Same path as every write — dry-run first, then submit, then wait
+   * for a final Accept. Returns the new registry component's address.
+   *
+   * With `dryRunOnly`, nothing is submitted; the address reported is the one the SIMULATION
+   * created, and the real one will differ (it is derived from the submitted transaction).
+   */
+  static async instantiate(
+    templateAddress: string,
+    signer: DaemonSigner,
+    opts: { network?: number; indexerUrl?: string; dryRunOnly?: boolean } = {},
+  ): Promise<(WriteResult & { component: string }) | DryRunResult> {
+    const writer = new OnsWriter({ component: "", network: opts.network, indexerUrl: opts.indexerUrl }, signer);
+    const r = await writer.execute(
+      "new",
+      (b) => b.callFunction({ templateAddress, functionName: "new" }, []),
+      { dryRunOnly: opts.dryRunOnly },
+    );
+    if ("dryRun" in r) return r;
+    const created = (r as WriteResult & { newComponents: string[] }).newComponents;
+    if (created.length !== 1) {
+      throw new Error(`ONS new: expected exactly one new component, got ${JSON.stringify(created)} (tx ${r.transactionId})`);
+    }
+    return { ...r, component: created[0]! };
   }
 
   /** Register a name. The signing account becomes its owner. */
