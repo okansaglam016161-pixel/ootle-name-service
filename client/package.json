@@ -21,6 +21,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/*.test.ts",
     "demo": "tsx demo/resolve-okz.ts",
     "prepare": "tsc -p tsconfig.json"
   },
@@ -33,10 +34,10 @@
     "registry"
   ],
   "peerDependencies": {
-    "@tari-project/ootle": "^0.6.0",
-    "@tari-project/ootle-indexer": "^0.6.0",
-    "@tari-project/ootle-secret-key-wallet": "^0.6.0",
-    "@tari-project/ootle-wasm": "^0.42.0"
+    "@tari-project/ootle": "^0.7.0",
+    "@tari-project/ootle-indexer": "^0.7.0",
+    "@tari-project/ootle-secret-key-wallet": "^0.7.0",
+    "@tari-project/ootle-wasm": "^0.43.0"
   },
   "peerDependenciesMeta": {
     "@tari-project/ootle": { "optional": true },
