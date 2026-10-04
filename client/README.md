@@ -21,7 +21,9 @@ Not published to npm yet — consume via local path or git:
 }
 ```
 
-`@tari-project/ootle` is an **optional peer dependency** — install it only if you do writes.
+The Tari SDK is an **optional peer dependency** — install it only if you do writes:
+`@tari-project/ootle`, `-indexer` and `-secret-key-wallet` 0.7, and `@tari-project/ootle-wasm` 0.43
+(Ootle 0.43 on esmeralda testnet).
 
 ## Configure
 
@@ -32,7 +34,7 @@ Nothing is hardcoded; component address, network and URLs are all config, so ano
 import { createOnsClient } from "@ootle/name-service";
 
 const ons = createOnsClient({
-  component: "component_0e70f16ad20e1c1b92f035d1e6f4b69c6c4c774ed309c2eb9e2c42c01279994a",
+  component: "component_0109d5287493affc06ec8902fcbf85bd2362832580feeac2a70cba7e5ac6da4d", // the live esmeralda registry
   // indexerUrl defaults to the esmeralda public indexer, https://ootle-indexer-a.tari.com
   // network defaults to 38 (Esmeralda), used only for writes
 });
@@ -41,10 +43,10 @@ const ons = createOnsClient({
 ## Reads (keyless)
 
 ```ts
-await ons.resolveToNostr("okz");   // "npub1f80…"  — the common Caravel case, or null
-await ons.getRecord("okz", "nostr"); // "npub1f80…" or null
-await ons.isRegistered("okz");     // true / false
-await ons.resolveName("okz");      // { name, owner, records } or null
+await ons.resolveToNostr("alice");   // "npub1…" — the common Caravel case, or null
+await ons.getRecord("alice", "nostr"); // "npub1…" or null
+await ons.isRegistered("alice");     // true / false
+await ons.resolveName("alice");      // { name, owner, records } or null
 ```
 
 `resolveName` returns:
@@ -57,7 +59,7 @@ interface NameRecord {
 }
 ```
 
-## Writes (need a wallet daemon)
+## Writes with a wallet daemon
 
 Writes are gated behind `withSigner()` — a read-only consumer never imports the signing code.
 
@@ -126,5 +128,5 @@ The contract stores records as opaque strings and does not interpret keys. By co
 npm install         # deps (typescript, tsx; + the @tari-project/ootle peer dep for writes)
 npm run typecheck   # tsc --noEmit
 npm run build       # emit dist/ (js + d.ts)
-npm run demo        # live keyless read proof against the deployed registry
+npm run demo        # keyless read demo — still points at the wiped ONS-2 registry, so it fails until updated
 ```

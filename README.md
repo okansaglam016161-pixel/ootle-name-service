@@ -2,9 +2,9 @@
 
 > ### Version pin (must TRACK the deployed Tari Ootle engine)
 > ```toml
-> tari_template_lib = "0.33"           # esmeralda / tari-ootle v0.42.x
+> tari_template_lib = "0.33"           # esmeralda: published on Ootle 0.42, running on 0.43
 > tari_ootle_template_build = "0.13"
-> tari_template_test_tooling = "0.42"
+> tari_template_test_tooling = "0.43"
 > # edition = "2024"
 > ```
 > **The pin has to match the network in BOTH directions.** A template built against a lib *ahead* of
@@ -29,8 +29,9 @@
 > ```
 > then match that engine version against the crate versions in the corresponding
 > [tari-ootle release](https://github.com/tari-project/tari-ootle/releases) — the template crates are
-> published alongside it, on their own version lines (engine 0.42 → `template_lib` 0.33,
-> `template_build` 0.13, `test_tooling` 0.42; engine 0.39 was 0.31 / 0.11 / 0.39). Re-validate with `cargo build-wasm && cargo test`
+> published alongside it, on their own version lines (engine 0.43 → `template_lib` 0.33,
+> `template_build` 0.13, `test_tooling` 0.43; engine 0.42 was 0.33 / 0.13 / 0.42; engine 0.39 was
+> 0.31 / 0.11 / 0.39). Re-validate with `cargo build-wasm && cargo test`
 > after any bump, and republish: a rebuilt template gets a NEW `template_address`, so every consumer
 > pinning the old one (see [Deployment](#deployment-esmeralda-testnet)) has to be updated too.
 
@@ -119,12 +120,15 @@ cargo build-wasm        # compile the template to wasm32-unknown-unknown (alias 
 cargo test              # local logic tests via tari_template_test_tooling
 ```
 
+Built with `tari_template_lib` 0.33 and
+`tari_ootle_template_build` 0.13; tested with the Ootle 0.43 test tooling (`tari_template_test_tooling` 0.43).
+
 The client (in [`client/`](client/)):
 
 ```bash
 cd client
 npm run typecheck       # tsc, no emit
-npm run demo            # live keyless read proof against the deployed registry (no key, no fee)
+npm run demo            # keyless read demo — still points at the wiped ONS-2 registry, so it fails until updated
 ```
 
 No credentials live in this repo — `tari-cli` authenticates to the wallet daemon via an API key
@@ -132,7 +136,10 @@ passed at publish time (`--api-key` / `TARI_WALLET_DAEMON_API_KEY`), never writt
 
 ## Deployment (esmeralda testnet)
 
-### Current — Ootle 0.42 (published 2026-10-01, epoch 11714)
+### Current — published on Ootle 0.42, running on 0.43 (re-verified live on 0.43)
+
+Published 2026-10-01, epoch 11714. On 0.43, Caravel registered `@testname3` through this registry
+(tx `d1a0639b8d26dc3a8f238046c11529499707e9e89cdf8b8d38058cf6ec5b7285`, Commit / Accept).
 
 Built from `793428f` (`tari_template_lib` 0.33, `tari_ootle_template_build` 0.13, `tari_template_test_tooling`
 0.42) and published with `tari-ootle-cli` 0.28 against `tari_ootle_walletd` 0.42, paid from the `deployer`
