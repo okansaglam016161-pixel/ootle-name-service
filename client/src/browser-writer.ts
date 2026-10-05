@@ -221,6 +221,13 @@ interface TxResult {
   feePaid: bigint;
   /** `total_fee_payment − total_fee_overcharge` — the true network cost (Accept only). */
   realCost?: bigint;
+  /**
+   * `finalize.total_fees_required` — the engine's own figure for what the transaction needs. A DRY
+   * RUN DOES NOT ENFORCE THE FEE (measured on Esmeralda 2026-10-05: a transaction costing 9 452
+   * dry-ran `Accept` while paying 1 000), but it does report this, identical at every payment, so
+   * it is what "is this budget enough" is checked against.
+   */
+  totalFeesRequired?: bigint;
   /** The exact fee the network demanded, parsed from a "Required fees N" rejection. */
   requiredFee?: bigint;
   /** Human-readable abort/reject detail, for surfacing an honest error. */
@@ -235,6 +242,9 @@ interface TxResult {
  */
 function classifyFinalize(finalize: Record<string, unknown> | undefined, abortDetails?: string): Omit<TxResult, "txId"> | null {
   const result = finalize?.result as Record<string, unknown> | undefined;
+  const reqRaw = finalize?.total_fees_required;
+  const totalFeesRequired =
+    typeof reqRaw === "number" || (typeof reqRaw === "string" && /^[0-9]+$/.test(reqRaw)) ? BigInt(reqRaw) : undefined;
   const receipt = finalize?.fee_receipt as
     | { total_fee_payment?: number | string; total_fees_paid?: number | string; total_fee_overcharge?: number | string }
     | undefined;
@@ -249,7 +259,7 @@ function classifyFinalize(finalize: Record<string, unknown> | undefined, abortDe
   const reason = abortDetails ?? (result ? JSON.stringify(result) : undefined);
 
   if (result && typeof result === "object") {
-    if ("Accept" in result) return { outcome: "Accept", feePaid, realCost };
+    if ("Accept" in result) return { outcome: "Accept", feePaid, realCost, totalFeesRequired };
     if ("AcceptFeeRejectRest" in result) return { outcome: "FeeIntentCommit", feePaid, requiredFee, reason };
     if ("Reject" in result) return { outcome: "Reject", feePaid, requiredFee, reason };
   }
@@ -370,37 +380,137 @@ export class OnsBrowserWriter {
 
   /**
    * Estimate — WITHOUT committing — the fee (µtTARI) to register `name` + its `nostr` record. Runs a
-   * simulated dry-run on the network; nothing is spent. Pair with {@link submitRegisterWithNostr} to
-   * show the user the cost and register only on their confirmation.
+   * simulated dry-run on the network; nothing is spent. For a confirm screen prefer
+   * {@link prepareRegisterWithNostr}, which also builds the transaction the confirm will send.
    */
   async estimateRegisterWithNostr(name: string, nostrPubkey: string): Promise<{ feeMicroTari: bigint }> {
-    const { requiredFee } = await this.estimate(registerWithNostrCalls(name, nostrPubkey));
+    const calls = registerWithNostrCalls(name, nostrPubkey);
+    const { requiredFee } = await this.estimate(calls, await this.feeInput());
     return { feeMicroTari: requiredFee };
   }
 
   /**
-   * Register `name` + its `nostr` record, revealing exactly `feeBudget` µtTARI for the fee (from a
-   * prior {@link estimateRegisterWithNostr}, plus the caller's chosen margin). Throws an honest error
-   * on any non-Accept outcome — including a fee-only commit where the fee was burned but no name set.
+   * Price AND build a register-with-nostr, without sending it.
+   *
+   * The two-phase form a confirm screen needs: the fee input is chosen ONCE, the transaction is
+   * dry-run to learn its cost, `budgetFor(cost)` sets the fee it will pay (default: this client's
+   * margin), and the REAL transaction is built and sealed at that fee. `submit()` sends that very
+   * envelope — no rescan, no reselection, no rebuild — so the fee shown is the fee charged: the whole
+   * revealed budget, since the overcharge is not refunded on this path.
    */
-  async submitRegisterWithNostr(name: string, nostrPubkey: string, feeBudget: bigint): Promise<WriteResult> {
-    const calls = registerWithNostrCalls(name, nostrPubkey);
-    const r = await this.buildSubmit(calls, feeBudget, false);
-    if (r.outcome !== "Accept") throw new Error(rejectMessage(r, calls));
-    return { transactionId: r.txId, fee: r.feePaid };
+  async prepareRegisterWithNostr(
+    name: string,
+    nostrPubkey: string,
+    budgetFor: (requiredFee: bigint) => bigint = withFeeMargin,
+  ): Promise<PreparedOnsWrite> {
+    return this.prepare(registerWithNostrCalls(name, nostrPubkey), budgetFor);
   }
 
-  /** Convenience: dry-run estimate → submit with a small safety margin. Used by the single-call API. */
+  /**
+   * Register `name` + its `nostr` record, revealing exactly `feeBudget` µtTARI for the fee. Kept for
+   * callers with a budget already in hand: it prepares at that budget and submits what it prepared.
+   * Throws an honest error on any non-Accept outcome — including a fee-only commit.
+   */
+  async submitRegisterWithNostr(name: string, nostrPubkey: string, feeBudget: bigint): Promise<WriteResult> {
+    const prepared = await this.prepare(registerWithNostrCalls(name, nostrPubkey), () => feeBudget);
+    return prepared.submit();
+  }
+
+  /** Convenience: prepare with this client's margin and submit at once. Used by the single-call API. */
   private async estimateAndSubmit(calls: Call[]): Promise<WriteResult> {
-    const { requiredFee } = await this.estimate(calls);
-    const r = await this.buildSubmit(calls, withFeeMargin(requiredFee), false);
-    if (r.outcome !== "Accept") throw new Error(rejectMessage(r, calls));
-    return { transactionId: r.txId, fee: r.feePaid };
+    const prepared = await this.prepare(calls, withFeeMargin);
+    return prepared.submit();
+  }
+
+  /** The prepare step shared by every write: one fee input, one dry run, one real build. */
+  private async prepare(calls: Call[], budgetFor: (requiredFee: bigint) => bigint): Promise<PreparedOnsWrite> {
+    const utxo = await this.feeInput();
+    const { requiredFee } = await this.estimate(calls, utxo);
+    const feeBudget = budgetFor(requiredFee);
+    if (feeBudget < requiredFee) {
+      throw new Error(`Fee budget ${feeBudget} µtTARI is below the ${requiredFee} µtTARI this write requires.`);
+    }
+    // The fee input was chosen to cover the dry-run budget, which is above every real cost; a budget
+    // beyond it was never simulated with this input, so it is refused rather than guessed at.
+    if (feeBudget >= utxo.value || feeBudget > DRY_RUN_REVEAL) {
+      throw new Error(`Fee budget ${feeBudget} µtTARI exceeds what this write reserved for its fee (${DRY_RUN_REVEAL} µtTARI).`);
+    }
+    const real = await this.build(calls, utxo, feeBudget, false);
+    const feeInputId = stealthUtxoSubstateId(TARI_RESOURCE_ADDRESS, utxo.commitment);
+    let submitted = false;
+
+    return {
+      feeMicroTari: feeBudget,
+      requiredFee,
+      feeInputId,
+      simulate: async () => {
+        // A twin of the real transaction — same fee input, same budget, same calls — dry-run. The
+        // dry run does not enforce the fee, so "accepted" is Accept AND the requirement within it.
+        const twin = await this.build(calls, utxo, feeBudget, true);
+        const dr = await dryRunSubmit(twin.provider, twin.envelope, this.onBusyRetry);
+        twin.provider.stopWatcher?.();
+        const need = dr.totalFeesRequired ?? dr.requiredFee;
+        if (dr.outcome !== "Accept") return { accepted: false, requiredFee: need, reason: dr.reason ?? dr.outcome };
+        if (need !== undefined && need > feeBudget) {
+          return { accepted: false, requiredFee: need, reason: `Required fees ${need} but ${feeBudget} paid` };
+        }
+        return { accepted: true, requiredFee: need };
+      },
+      submit: async () => {
+        // ONE SUBMISSION PER PREPARE. A second call would resend an envelope whose input is already
+        // spent (or in flight) — refuse rather than let a retry button pay twice.
+        if (submitted) throw new Error("This prepared ONS write has already been submitted.");
+        submitted = true;
+        // A busy refusal is retried with THIS envelope only, and only while the fee input still
+        // exists (i.e. the refused attempt did not land). Anything ambiguous is never resubmitted.
+        const sub = await submitOnce(() => real.provider.submitTransaction(real.envelope), {
+          landed: () => substateStillExists(this.indexerUrl, feeInputId),
+          onBusyRetry: this.onBusyRetry,
+        });
+        const txId = sub.transaction_id as string;
+        this.signer.onSubmitted?.(txId, [utxo.substateId]);
+        const polled = await pollResult(this.indexerUrl, txId);
+        real.provider.stopWatcher?.();
+        const r = { ...polled, txId };
+        if (r.outcome !== "Accept") throw new Error(rejectMessage(r, calls));
+        return { transactionId: r.txId, fee: r.feePaid };
+      },
+    };
+  }
+
+  private readonly onBusyRetry = () => this.signer.onProgress?.(RETRYING_MESSAGE);
+
+  /**
+   * The fee input: the smallest owned output larger than the dry-run budget. Chosen ONCE per write
+   * and used for both the pricing dry run and the real build, so the transaction that is priced is
+   * the transaction that is sent.
+   */
+  private async feeInput(): Promise<OwnedFeeUtxo> {
+    const crypto = new WasmStealthCrypto(Network.Esmeralda);
+    const utxos = this.signer.ownedUtxos
+      ? await this.signer.ownedUtxos()
+      : await scanUtxos(this.indexerUrl, crypto, await this.signer.wallet.getViewSecret());
+    if (utxos.length === 0) throw new Error("No confidential UTXOs found — this wallet needs a balance to pay the fee.");
+    const candidates = utxos.filter((u) => u.value > DRY_RUN_REVEAL).sort((a, b) => Number(a.value - b.value));
+    if (candidates.length === 0) {
+      const largest = utxos.reduce((m, u) => (u.value > m ? u.value : m), 0n);
+      throw new Error(
+        `Can't fund the fee from one UTXO: need more than ${DRY_RUN_REVEAL} µtTARI in a single UTXO, but the largest is ${largest} µtTARI. ` +
+          `(Paying a fee from multiple UTXOs isn't supported yet — consolidate first.)`,
+      );
+    }
+    return candidates[0]!;
   }
 
   /** Dry-run the call(s) to learn the exact required fee (µtTARI). Nothing is committed. */
-  private async estimate(calls: Call[]): Promise<{ requiredFee: bigint }> {
-    const r = await this.buildSubmit(calls, DRY_RUN_REVEAL, true);
+  private async estimate(calls: Call[], utxo: OwnedFeeUtxo): Promise<{ requiredFee: bigint }> {
+    const probe = await this.build(calls, utxo, DRY_RUN_REVEAL, true);
+    const r = await dryRunSubmit(probe.provider, probe.envelope, this.onBusyRetry);
+    probe.provider.stopWatcher?.();
+    // The engine's own figure first — it does not depend on how the probe was funded.
+    if (r.outcome === "Accept" && r.totalFeesRequired !== undefined && r.totalFeesRequired > 0n) {
+      return { requiredFee: r.totalFeesRequired };
+    }
     // Genuine accept: the revealed budget EXCEEDED the real cost, so overcharge > 0 and
     // realCost = payment − overcharge is the true fee. `realCost < DRY_RUN_REVEAL` proves overcharge
     // was positive — guarding against the degenerate case where an under-sized budget floors the
@@ -410,6 +520,7 @@ export class OnsBrowserWriter {
     }
     // Budget was below the real cost — the network told us exactly what it needs.
     if (r.requiredFee !== undefined) return { requiredFee: r.requiredFee };
+    if (r.outcome !== "Accept") throw new Error(rejectMessage({ ...r, txId: "(dry-run)" }, calls));
     // Degenerate accept (fee ≥ dry-run budget, overcharge floored to 0) or a missing receipt.
     throw new Error(
       `Could not estimate the registration fee — the cost may exceed the ${DRY_RUN_REVEAL} µtTARI dry-run budget (outcome: ${r.outcome}).`,
@@ -417,29 +528,19 @@ export class OnsBrowserWriter {
   }
 
   /**
-   * Build the fee (reveal `feeBudget` from one UTXO, change to self) + the ONS method call(s), sign,
-   * and submit — or, when `dryRun`, submit a simulated transaction the network won't commit. Returns
-   * the classified execution outcome; callers decide whether a non-Accept is fatal.
+   * Build the fee (reveal `feeBudget` from `utxo`, change to self) + the ONS method call(s), sign
+   * and seal — a dry run when `dryRun`. Returns the envelope and the provider it was resolved on;
+   * nothing is sent here.
    */
-  private async buildSubmit(calls: Call[], feeBudget: bigint, dryRun: boolean): Promise<TxResult> {
+  private async build(
+    calls: Call[],
+    utxo: OwnedFeeUtxo,
+    feeBudget: bigint,
+    dryRun: boolean,
+  ): Promise<{ envelope: ReturnType<typeof sealTransaction>; provider: IndexerProvider }> {
     const { wallet, senderAddress } = this.signer;
     const provider = await IndexerProvider.connect({ url: this.indexerUrl, network: Network.Esmeralda });
     const crypto = new WasmStealthCrypto(Network.Esmeralda);
-    const viewSecret = await wallet.getViewSecret();
-
-    const utxos = this.signer.ownedUtxos
-      ? await this.signer.ownedUtxos()
-      : await scanUtxos(this.indexerUrl, crypto, viewSecret);
-    if (utxos.length === 0) throw new Error("No confidential UTXOs found — this wallet needs a balance to pay the fee.");
-    const candidates = utxos.filter((u) => u.value > feeBudget).sort((a, b) => Number(a.value - b.value));
-    if (candidates.length === 0) {
-      const largest = utxos.reduce((m, u) => (u.value > m ? u.value : m), 0n);
-      throw new Error(
-        `Can't fund the fee from one UTXO: need more than ${feeBudget} µtTARI in a single UTXO, but the largest is ${largest} µtTARI. ` +
-          `(Paying a fee from multiple UTXOs isn't supported yet — consolidate first.)`,
-      );
-    }
-    const utxo = candidates[0]!;
     const changeAmount = utxo.value - feeBudget;
 
     // Reveal feeBudget for the fee; send the rest back to self as change.
@@ -459,8 +560,7 @@ export class OnsBrowserWriter {
     // 0.39: `max_epoch` is mandatory, so the builder needs the chain tip before it exists. Read
     // here — after the range proofs above, immediately before the builder — so none of the validity
     // window is spent generating them locally.
-    const onBusyRetry = () => this.signer.onProgress?.(RETRYING_MESSAGE);
-    const maxEpoch = await withBusyRetry(() => resolveMaxEpoch(provider, MAX_EPOCH_LEAD), { attempts: READ_ATTEMPTS, onBusyRetry });
+    const maxEpoch = await withBusyRetry(() => resolveMaxEpoch(provider, MAX_EPOCH_LEAD), { attempts: READ_ATTEMPTS, onBusyRetry: this.onBusyRetry });
     const builder = new TransactionBuilder(Network.Esmeralda, maxEpoch);
     // Fee: StealthTransfer → bucket on workspace → PayFeeFromBucket (identical to confidentialSend).
     builder.addFeeInstruction(
@@ -476,7 +576,7 @@ export class OnsBrowserWriter {
 
     const unsignedTx = await withBusyRetry(() => resolveTransaction(provider, builder.buildUnsignedTransaction()), {
       attempts: READ_ATTEMPTS,
-      onBusyRetry,
+      onBusyRetry: this.onBusyRetry,
     });
     // A dry-run asks the network to simulate execution and return the result without committing state
     // (no fee spent). Set it before serialising so the flag is covered by the signature.
@@ -487,27 +587,29 @@ export class OnsBrowserWriter {
 
     const ootleWallet = new OotleWallet().registerKeyProvider(senderAddress, wallet).setDefaultSigner(senderAddress);
     const signed = await signTransaction([ootleWallet, new StaticSigner([oneTimeSig])], unsignedTx, sealKP);
-    const envelope = sealTransaction(signed);
-
-    // Dry-runs must go to the dedicated endpoint; the normal submit path rejects `dry_run` txs.
-    if (dryRun) {
-      const dr = await dryRunSubmit(provider, envelope, onBusyRetry);
-      provider.stopWatcher?.();
-      return dr;
-    }
-    // A busy refusal is retried with THIS envelope only, and only while the fee input still exists
-    // (i.e. the refused attempt did not land). Anything ambiguous is never resubmitted — see retry.ts.
-    const feeInputId = stealthUtxoSubstateId(TARI_RESOURCE_ADDRESS, utxo.commitment);
-    const sub = await submitOnce(() => provider.submitTransaction(envelope), {
-      landed: () => substateStillExists(this.indexerUrl, feeInputId),
-      onBusyRetry,
-    });
-    const txId = sub.transaction_id as string;
-    this.signer.onSubmitted?.(txId, [utxo.substateId]);
-    const r = await pollResult(this.indexerUrl, txId);
-    provider.stopWatcher?.();
-    return { ...r, txId };
+    return { envelope: sealTransaction(signed), provider };
   }
+}
+
+/**
+ * A priced, built, sealed ONS write — everything except sending it. See
+ * {@link OnsBrowserWriter.prepareRegisterWithNostr}.
+ */
+export interface PreparedOnsWrite {
+  /** The fee the transaction pays, exactly (µtTARI): the whole revealed budget. */
+  feeMicroTari: bigint;
+  /** What the pricing dry run measured the write to require (µtTARI), before any margin. */
+  requiredFee: bigint;
+  /** Substate id of the stealth output the fee is paid from — the one input this write spends. */
+  feeInputId: string;
+  /**
+   * Dry-run a twin of the prepared transaction (same fee input, same budget, same calls). Free.
+   * `accepted` only when the network would Accept it AND its required fee is within the budget —
+   * the dry run itself does not enforce the fee.
+   */
+  simulate(): Promise<{ accepted: boolean; requiredFee?: bigint; reason?: string }>;
+  /** Send THE prepared envelope, once. Throws an honest error on any non-Accept outcome. */
+  submit(): Promise<WriteResult>;
 }
 
 /** An ONS template method call. */

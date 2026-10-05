@@ -92,17 +92,25 @@ const writer = await ons.withBrowserSigner({
 });
 ```
 
-Registration is an **estimate → confirm → submit** flow, so the user sees the real fee before
-anything is spent:
+Registration is a **prepare → confirm → submit** flow, so the user sees the exact fee before
+anything is spent — and the transaction they confirm is the one that is sent:
 
 ```ts
-// 1. Estimate — a dry-run against the indexer's /transactions/dry-run endpoint. Nothing is committed
-//    or spent; returns the true required fee.
-const { feeMicroTari } = await writer.estimateRegisterWithNostr("alice", "npub1…");
+// 1. Prepare — pick the fee input once, dry-run against /transactions/dry-run to learn the cost, and
+//    build + seal the REAL transaction at the fee you choose. Nothing is committed or spent.
+const prepared = await writer.prepareRegisterWithNostr("alice", "npub1…", cost => cost + cost / 50n)
 
-// 2. Show feeMicroTari to the user; on their confirmation, submit with the approved budget.
-const { transactionId, fee } = await writer.submitRegisterWithNostr("alice", "npub1…", feeMicroTari);
+// 2. Show prepared.feeMicroTari — the whole revealed budget, which is exactly what is charged (the
+//    overcharge is not refunded on this path). Optionally re-check just before sending: a free dry
+//    run of a twin at the same fee, accepted only if the network's required fee is within it.
+const check = await prepared.simulate()
+
+// 3. On confirmation, send THAT envelope — no rescan, no reselection, no rebuild. Once only.
+const { transactionId, fee } = await prepared.submit()
 ```
+
+`estimateRegisterWithNostr` / `submitRegisterWithNostr(name, npub, budget)` remain for callers that
+already hold a budget; the latter now prepares at that budget and submits what it prepared.
 
 `registerWithNostr(name, npub)` is a one-call convenience (estimate + submit with a small margin) for
 callers that don't need a confirm gate; `register` / `setRecord` work the same way.
