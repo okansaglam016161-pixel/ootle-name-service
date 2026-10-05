@@ -128,7 +128,7 @@ The client (in [`client/`](client/)):
 ```bash
 cd client
 npm run typecheck       # tsc, no emit
-npm run demo            # keyless read demo — still points at the wiped ONS-2 registry, so it fails until updated
+npm run demo            # keyless read demo — resolves testname4 on the live registry
 ```
 
 No credentials live in this repo — `tari-cli` authenticates to the wallet daemon via an API key

@@ -22,7 +22,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/*.test.ts",
-    "demo": "tsx demo/resolve-okz.ts",
+    "demo": "tsx demo/resolve-live.ts",
     "prepare": "tsc -p tsconfig.json"
   },
   "keywords": [

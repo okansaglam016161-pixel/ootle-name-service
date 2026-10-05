@@ -136,5 +136,5 @@ The contract stores records as opaque strings and does not interpret keys. By co
 npm install         # deps (typescript, tsx; + the @tari-project/ootle peer dep for writes)
 npm run typecheck   # tsc --noEmit
 npm run build       # emit dist/ (js + d.ts)
-npm run demo        # keyless read demo — still points at the wiped ONS-2 registry, so it fails until updated
+npm run demo        # keyless read demo — resolves testname4 on the live registry
 ```
