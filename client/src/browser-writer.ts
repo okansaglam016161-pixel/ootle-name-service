@@ -1,7 +1,7 @@
 //   ONS client — browser (self-custodial) write path.
 //
 //   Reuses the PROVEN Caravel signing flow (TransactionBuilder → signTransaction → sealTransaction
-//   → indexer submit; see caravel-app/src/crypto/confidentialSend.ts), swapping the confidential
+//   → indexer submit; see caravel/src/crypto/confidentialSend.ts), swapping the confidential
 //   *transfer* for a template *method call* (register / set_record). A self-custodial Ootle wallet
 //   holds confidential UTXOs and has no account component, so the fee is paid the same way
 //   confidentialSend pays it: reveal MAX_FEE out of one UTXO via a StealthTransfer, PayFeeFromBucket,
