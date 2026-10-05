@@ -1,7 +1,7 @@
 [package]
 name = "ootle_name_service"
 version = "0.1.0"
-authors = ["Okan Saglam <okansaglam016161@gmail.com>"]
+authors = ["Okz"]
 edition = "2024"
 # description / license / repository are read into the PUBLISHED template metadata by
 # tari_ootle_template_build, alongside [package.metadata.tari-template] below. They are baked into
