@@ -2,9 +2,9 @@
 
 > ### Version pin (must TRACK the deployed Tari Ootle engine)
 > ```toml
-> tari_template_lib = "0.33"           # esmeralda: published on Ootle 0.42, running on 0.43
-> tari_ootle_template_build = "0.13"
-> tari_template_test_tooling = "0.43"
+> tari_template_lib = "0.34"           # source tooling for Ootle 0.45 (deployed template: 0.42 build, see Deployment)
+> tari_ootle_template_build = "0.14"
+> tari_template_test_tooling = "0.45"
 > # edition = "2024"
 > ```
 > **The pin has to match the network in BOTH directions.** A template built against a lib *ahead* of
@@ -29,9 +29,9 @@
 > ```
 > then match that engine version against the crate versions in the corresponding
 > [tari-ootle release](https://github.com/tari-project/tari-ootle/releases) — the template crates are
-> published alongside it, on their own version lines (engine 0.43 → `template_lib` 0.33,
-> `template_build` 0.13, `test_tooling` 0.43; engine 0.42 was 0.33 / 0.13 / 0.42; engine 0.39 was
-> 0.31 / 0.11 / 0.39). Re-validate with `cargo build-wasm && cargo test`
+> published alongside it, on their own version lines (engine 0.45 → `template_lib` 0.34,
+> `template_build` 0.14, `test_tooling` 0.45; engine 0.43 was 0.33 / 0.13 / 0.43; engine 0.42 was
+> 0.33 / 0.13 / 0.42; engine 0.39 was 0.31 / 0.11 / 0.39). Re-validate with `cargo build-wasm && cargo test`
 > after any bump, and republish: a rebuilt template gets a NEW `template_address`, so every consumer
 > pinning the old one (see [Deployment](#deployment-esmeralda-testnet)) has to be updated too.
 
@@ -120,8 +120,10 @@ cargo build-wasm        # compile the template to wasm32-unknown-unknown (alias 
 cargo test              # local logic tests via tari_template_test_tooling
 ```
 
-Built with `tari_template_lib` 0.33 and
-`tari_ootle_template_build` 0.13; tested with the Ootle 0.43 test tooling (`tari_template_test_tooling` 0.43).
+Built with `tari_template_lib` 0.34 and
+`tari_ootle_template_build` 0.14; tested with the Ootle 0.45 test tooling (`tari_template_test_tooling` 0.45).
+The deployed template is not rebuilt by a tooling bump: it is still the build from `793428f` published on
+Ootle 0.42 (see [Deployment](#deployment-esmeralda-testnet)).
 
 The client (in [`client/`](client/)):
 

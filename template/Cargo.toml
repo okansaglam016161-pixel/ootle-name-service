@@ -35,10 +35,10 @@ commit_hash = "793428f77d27850f871840cb3739ebb388328766"
 
 
 [dependencies]
-tari_template_lib = { version = "0.33" }
+tari_template_lib = { version = "0.34" }
 
 [dev-dependencies]
-tari_template_test_tooling = "0.43"
+tari_template_test_tooling = "0.45"
 
 
 
@@ -47,7 +47,7 @@ tari_template_test_tooling = "0.43"
 crate-type = ["cdylib"]
 
 [build-dependencies]
-tari_ootle_template_build = "0.13"
+tari_ootle_template_build = "0.14"
 
 # Size optimisations for the published WASM. `tari build` and `tari publish` already pass these via
 # `cargo --config`, but a plain `cargo build --release` does not — so without this section the two
