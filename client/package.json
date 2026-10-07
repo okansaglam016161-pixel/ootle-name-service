@@ -34,10 +34,10 @@
     "registry"
   ],
   "peerDependencies": {
-    "@tari-project/ootle": "^0.7.0",
-    "@tari-project/ootle-indexer": "^0.7.0",
-    "@tari-project/ootle-secret-key-wallet": "^0.7.0",
-    "@tari-project/ootle-wasm": "^0.43.0"
+    "@tari-project/ootle": "^0.8.0",
+    "@tari-project/ootle-indexer": "^0.8.0",
+    "@tari-project/ootle-secret-key-wallet": "^0.8.0",
+    "@tari-project/ootle-wasm": "^0.45.0"
   },
   "peerDependenciesMeta": {
     "@tari-project/ootle": { "optional": true },
