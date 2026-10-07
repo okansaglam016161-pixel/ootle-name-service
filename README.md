@@ -138,7 +138,7 @@ passed at publish time (`--api-key` / `TARI_WALLET_DAEMON_API_KEY`), never writt
 
 ## Deployment (esmeralda testnet)
 
-### Current — published on Ootle 0.42, running on 0.43 (re-verified live on 0.43)
+### Current — published on Ootle 0.42, running on 0.45 (re-verified live on 0.45)
 
 Published 2026-10-01, epoch 11714. On 0.43, Caravel registered `@testname3` through this registry
 (tx `d1a0639b8d26dc3a8f238046c11529499707e9e89cdf8b8d38058cf6ec5b7285`, Commit / Accept).
