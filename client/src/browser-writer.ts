@@ -101,6 +101,15 @@ export interface BrowserSigner {
   wallet: SecretKeyWallet;
   /** The wallet's owner address (`otl_esm_…`), the change destination. */
   senderAddress: string;
+  /**
+   * The key that owns the names this writer registers, and signs its writes. A name's owner is the
+   * transaction's first signer, recorded publicly in the registry — so a wallet that keeps a separate
+   * key for its names (rather than its account's owner key) passes it here. It is also the receiver
+   * of the revealed fee. To edit a name, pass the key that owns it.
+   *
+   * Defaults to `wallet`, which is how every write signed before this option existed.
+   */
+  nameOwner?: Signer;
   /** Indexer base URL. Defaults to the esmeralda public indexer. */
   indexerUrl?: string;
   /**
@@ -546,9 +555,10 @@ export class OnsBrowserWriter {
     // Reveal feeBudget for the fee; send the rest back to self as change.
     //
     // Ootle 0.42: the revealed output names a RECEIVER, and the engine only creates its bucket if
-    // that key's badge is in the transaction's auth scope. That is the wallet's owner key, which
-    // signs below through `ootleWallet` (not StaticSigner — its public key is zeros).
-    const ownerPk = await wallet.getPublicKey();
+    // that key's badge is in the transaction's auth scope. That is the name owner's key, which signs
+    // below as the FIRST signer (not StaticSigner — its public key is zeros).
+    const nameOwner = this.signer.nameOwner;
+    const ownerPk = await (nameOwner ?? wallet).getPublicKey();
     const { statement: outsStmt, outputMask } = await crypto.generateOutputsStatement(
       [createOutput({ destination: senderAddress, amount: changeAmount, resourceAddress: TARI_RESOURCE_ADDRESS })],
       { amount: feeBudget, receiver: ownerPk },
@@ -585,8 +595,11 @@ export class OnsBrowserWriter {
     const unsignedJson = serializeUnsignedTx(unsignedTx);
     const oneTimeSig = await wallet.addStealthSignature(unsignedJson, utxo.nonce, sealKP.public_key, { crypto });
 
-    const ootleWallet = new OotleWallet().registerKeyProvider(senderAddress, wallet).setDefaultSigner(senderAddress);
-    const signed = await signTransaction([ootleWallet, new StaticSigner([oneTimeSig])], unsignedTx, sealKP);
+    // FIRST SIGNER = NAME OWNER. The seal signer is not authorized, so the engine's "transaction
+    // signer" — the key register() records as the owner and set_record() checks — is the first
+    // signature. The fee input's one-time signature comes after it.
+    const ownerSigner: Signer = nameOwner ?? new OotleWallet().registerKeyProvider(senderAddress, wallet).setDefaultSigner(senderAddress);
+    const signed = await signTransaction([ownerSigner, new StaticSigner([oneTimeSig])], unsignedTx, sealKP);
     return { envelope: sealTransaction(signed), provider };
   }
 }

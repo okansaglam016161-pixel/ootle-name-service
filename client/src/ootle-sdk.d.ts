@@ -52,9 +52,12 @@ declare module "@tari-project/ootle" {
     buildInputsStatement(inputs: unknown[], revealed: bigint): Promise<unknown>;
   }
 
-  export class OotleWallet {
+  export class OotleWallet implements Signer {
     registerKeyProvider(address: string, wallet: unknown): OotleWallet;
     setDefaultSigner(address: string): OotleWallet;
+    getAddress(): Promise<string>;
+    getPublicKey(): Promise<Uint8Array>;
+    signTransaction(tx: unknown, key: Uint8Array): Promise<unknown>;
   }
 
   export class StealthInput {

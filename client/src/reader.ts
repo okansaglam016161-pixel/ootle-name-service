@@ -95,13 +95,22 @@ export class OnsReader {
    * device for the same owner. Returns `[]` if the owner holds no names. Sorted by name.
    */
   async namesForOwner(ownerKeyHex: string): Promise<NameRecord[]> {
-    const target = ownerKeyHex.trim().toLowerCase();
-    if (!target) return [];
+    return this.namesForOwners([ownerKeyHex]);
+  }
+
+  /**
+   * Every name owned by ANY of these keys, from one registry read, sorted by name. For a wallet that
+   * owns names under more than one key (e.g. its account key and a separate names key). Each
+   * record's `owner` says which key holds it — the key that must sign an edit.
+   */
+  async namesForOwners(ownerKeyHexes: readonly string[]): Promise<NameRecord[]> {
+    const targets = new Set(ownerKeyHexes.map((k) => k.trim().toLowerCase()).filter(Boolean));
+    if (targets.size === 0) return [];
     const registry = await this.fetchRegistry();
     const owned: NameRecord[] = [];
     for (const [name, entry] of Object.entries(registry)) {
       const owner = ownerHex(entry[0]);
-      if (owner.toLowerCase() === target) {
+      if (targets.has(owner.toLowerCase())) {
         owned.push({ name, owner, records: { ...(entry[1] ?? {}) } });
       }
     }

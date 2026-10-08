@@ -47,6 +47,7 @@ await ons.resolveToNostr("alice");   // "npub1…" — the common Caravel case, 
 await ons.getRecord("alice", "nostr"); // "npub1…" or null
 await ons.isRegistered("alice");     // true / false
 await ons.resolveName("alice");      // { name, owner, records } or null
+await ons.namesForOwners([keyA, keyB]); // every name either key owns, sorted; each record names its owner
 ```
 
 `resolveName` returns:
@@ -88,9 +89,15 @@ confidential UTXO. This is the path [Caravel](https://github.com/okansaglam01616
 const writer = await ons.withBrowserSigner({
   wallet,          // a self-custodial SecretKeyWallet (client-side keys)
   senderAddress,   // the wallet's otl_esm_… address (fee source + change destination)
+  // nameOwner?    // the key that owns the names written (default: wallet) — see below
   // indexerUrl?   // defaults to the esmeralda public indexer
 });
 ```
+
+A name's owner is the transaction's **first signer**, and the registry records it publicly. A wallet
+that keeps a separate key for its names, rather than registering them under its account's owner key,
+passes that key as `nameOwner`: it signs first, owns what it registers, and receives the revealed
+fee. To edit a name, attach the key that owns it (`NameRecord.owner` says which).
 
 Registration is a **prepare → confirm → submit** flow, so the user sees the exact fee before
 anything is spent — and the transaction they confirm is the one that is sent:
