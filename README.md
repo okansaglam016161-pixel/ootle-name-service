@@ -2,9 +2,9 @@
 
 > ### Version pin (must TRACK the deployed Tari Ootle engine)
 > ```toml
-> tari_template_lib = "0.34"           # source tooling for Ootle 0.45 (deployed template: 0.42 build, see Deployment)
-> tari_ootle_template_build = "0.14"
-> tari_template_test_tooling = "0.45"
+> tari_template_lib = "0.34"           # source tooling for Ootle 0.46 (deployed template: 0.42 build, see Deployment)
+> tari_ootle_template_build = "0.15"
+> tari_template_test_tooling = "0.46"
 > # edition = "2024"
 > ```
 > **The pin has to match the network in BOTH directions.** A template built against a lib *ahead* of
@@ -29,8 +29,8 @@
 > ```
 > then match that engine version against the crate versions in the corresponding
 > [tari-ootle release](https://github.com/tari-project/tari-ootle/releases) — the template crates are
-> published alongside it, on their own version lines (engine 0.45 → `template_lib` 0.34,
-> `template_build` 0.14, `test_tooling` 0.45; engine 0.43 was 0.33 / 0.13 / 0.43; engine 0.42 was
+> published alongside it, on their own version lines (engine 0.46 → `template_lib` 0.34,
+> `template_build` 0.15, `test_tooling` 0.46; engine 0.45 was 0.34 / 0.14 / 0.45; engine 0.43 was 0.33 / 0.13 / 0.43; engine 0.42 was
 > 0.33 / 0.13 / 0.42; engine 0.39 was 0.31 / 0.11 / 0.39). Re-validate with `cargo build-wasm && cargo test`
 > after any bump, and republish: a rebuilt template gets a NEW `template_address`, so every consumer
 > pinning the old one (see [Deployment](#deployment-esmeralda-testnet)) has to be updated too.
@@ -121,7 +121,7 @@ cargo test              # local logic tests via tari_template_test_tooling
 ```
 
 Built with `tari_template_lib` 0.34 and
-`tari_ootle_template_build` 0.14; tested with the Ootle 0.45 test tooling (`tari_template_test_tooling` 0.45).
+`tari_ootle_template_build` 0.15; tested with the Ootle 0.46 test tooling (`tari_template_test_tooling` 0.46).
 The deployed template is not rebuilt by a tooling bump: it is still the build from `793428f` published on
 Ootle 0.42 (see [Deployment](#deployment-esmeralda-testnet)).
 
@@ -138,7 +138,7 @@ passed at publish time (`--api-key` / `TARI_WALLET_DAEMON_API_KEY`), never writt
 
 ## Deployment (esmeralda testnet)
 
-### Current — published on Ootle 0.42, running on 0.45 (re-verified live on 0.45)
+### Current: published on Ootle 0.42, running on 0.46 (reads and dry runs re-verified on 0.46)
 
 Published 2026-10-01, epoch 11714. On 0.43, Caravel registered `@testname3` through this registry
 (tx `d1a0639b8d26dc3a8f238046c11529499707e9e89cdf8b8d38058cf6ec5b7285`, Commit / Accept).
