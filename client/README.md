@@ -22,8 +22,8 @@ Not published to npm yet — consume via local path or git:
 ```
 
 The Tari SDK is an **optional peer dependency** — install it only if you do writes:
-`@tari-project/ootle`, `-indexer` and `-secret-key-wallet` 0.8, and `@tari-project/ootle-wasm` 0.45
-(Ootle 0.45, protocol V1, on esmeralda testnet).
+`@tari-project/ootle`, `-indexer` and `-secret-key-wallet` 0.9, and `@tari-project/ootle-wasm` 0.46
+(Ootle 0.46 on esmeralda testnet; protocol V2 from epoch 12220).
 
 ## Configure
 
